@@ -39,10 +39,10 @@ set(CXX_FLAGS
 set(CUDA_FLAGS
     $<IF:$<CXX_COMPILER_ID:MSVC>,
     -Xcompiler=/std:c++17,
-    -Xcompiler=-std=c++17 -Wextra>
+    -Xcompiler=-std=c++17 -Xcompiler=-Wextra>
     $<IF:$<CXX_COMPILER_ID:MSVC>,
     -Xcompiler=/W4,
-    -Xcompiler=-Wall -W  -Wcast-qual -Wuninitialized>
+    -Xcompiler=-Wall -Xcompiler=-W  -Xcompiler=-Wcast-qual -Xcompiler=-Wuninitialized>
     $<IF:$<CONFIG:Debug>,
         -G -src-in-ptx,
         -lineinfo>
