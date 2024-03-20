@@ -67,9 +67,9 @@ __global__ void concurrent_find_erase_kernel_versioned(const key_type* find_keys
   __shared__ uint32_t buffer_buffer[required_shmem];
 
   // reclaimer tile
-  __shared__ cg::experimental::block_tile_memory<4, btree::reclaimer_block_size_> block_tile_shemm;
-  auto thb             = cg::experimental::this_thread_block(block_tile_shemm);
-  auto block_wide_tile = cg::experimental::tiled_partition<btree::reclaimer_block_size_>(thb);
+  __shared__ cg::block_tile_memory<btree::reclaimer_block_size_> block_tile_shemm;
+  auto thb             = cg::this_thread_block(block_tile_shemm);
+  auto block_wide_tile = cg::tiled_partition<btree::reclaimer_block_size_>(thb);
   auto reclaimer =
       reclaimer_type{tree.host_reclaimer_, &buffer_buffer[0], gridDim.x, block_wide_tile};
 
@@ -189,9 +189,9 @@ __global__ void concurrent_insert_range_kernel(const key_type* keys,
   __shared__ uint32_t buffer_buffer[required_shmem];
 
   // reclaimer tile
-  __shared__ cg::experimental::block_tile_memory<4, btree::reclaimer_block_size_> block_tile_shemm;
-  auto thb             = cg::experimental::this_thread_block(block_tile_shemm);
-  auto block_wide_tile = cg::experimental::tiled_partition<btree::reclaimer_block_size_>(thb);
+  __shared__ cg::block_tile_memory<btree::reclaimer_block_size_> block_tile_shemm;
+  auto thb             = cg::this_thread_block(block_tile_shemm);
+  auto block_wide_tile = cg::tiled_partition<btree::reclaimer_block_size_>(thb);
   auto reclaimer =
       reclaimer_type{tree.host_reclaimer_, &buffer_buffer[0], gridDim.x, block_wide_tile};
 
