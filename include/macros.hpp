@@ -25,6 +25,7 @@
     cudaError_t err = call;                                                             \
     if (err != cudaSuccess) {                                                           \
       printf("CUDA error at %s %d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err)); \
+      fflush(stdout);                                                                   \
       std::terminate();                                                                 \
     }                                                                                   \
   } while (0)

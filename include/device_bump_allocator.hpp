@@ -72,7 +72,7 @@ struct device_bump_allocator {
   __device__ void set_allocated_count(size_type count) { *d_slab_count_ = count; }
   uint32_t get_total_allocated_count() const { return get_allocated_count(); }
 
-  void copy_buffer(T* buffer, std::size_t bytes_count) const {
+  void copy_buffer(void* buffer, std::size_t bytes_count) const {
     cuda_try(cudaMemcpy(buffer, d_buffer_, bytes_count, cudaMemcpyDeviceToHost));
   }
 

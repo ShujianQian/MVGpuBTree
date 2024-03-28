@@ -62,4 +62,5 @@ target_link_libraries(unittest_btree	PRIVATE gpu_btrees  PRIVATE gtest)
 add_executable(unittest_versioning unittest_versioning.cu)
 target_link_libraries(unittest_versioning PRIVATE gpu_btrees  PRIVATE gtest)
 
-
+add_executable(unittest_var_pair_type unittest_var_pair_type.cu)
+target_link_libraries(unittest_var_pair_type PRIVATE gpu_btrees  PRIVATE gtest)

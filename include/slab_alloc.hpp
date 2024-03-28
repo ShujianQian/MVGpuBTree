@@ -436,7 +436,7 @@ struct SlabAllocLight {
     is_copy_ = true;
   }
 
-  void copy_buffer(T* buffer, uint32_t bytes_count) const {
+  void copy_buffer(void* buffer, uint32_t bytes_count) const {
     (void)buffer;
     (void)bytes_count;
   }

@@ -25,8 +25,8 @@ template <typename pair_type, typename tile_type, int node_width = 16>
 struct btree_node {
   using key_type                            = typename pair_type::key_type;
   using value_type                          = typename pair_type::value_type;
-  static constexpr key_type invalid_key     = std::numeric_limits<uint32_t>::max();
-  static constexpr value_type invalid_value = std::numeric_limits<uint32_t>::max();
+  static constexpr key_type invalid_key     = pair_type::invalid_key;
+  static constexpr value_type invalid_value = pair_type::invalid_value;
   using size_type                           = uint32_t;
   using unsigned_type =
       typename std::conditional<sizeof(key_type) == sizeof(uint32_t), uint32_t, uint64_t>::type;
@@ -74,8 +74,8 @@ struct btree_node {
     // find the two minimum keys
     auto sibling_minimum = get_key_from_lane(half_node_width_);
     // prepare the upper half in right sibling
-    auto upper_key   = tile_.shfl_down(lane_pair_.first, half_node_width_);
-    auto upper_value = tile_.shfl_down(lane_pair_.second, half_node_width_);
+    auto upper_key   = tile_.shfl_down(static_cast<typename pair_type::key_type>(lane_pair_.first), half_node_width_);
+    auto upper_value = tile_.shfl_down(static_cast<typename pair_type::value_type>(lane_pair_.second), half_node_width_);
 
     // store sibling information
     auto this_node_sibling_index   = get_value_from_lane(metadata_lane_);
@@ -186,7 +186,7 @@ struct btree_node {
   }
 
   DEVICE_QUALIFIER int find_next_lane(const key_type& key) const {
-    const bool valid_key              = lane_pair_.first != std::numeric_limits<uint32_t>::max();
+    const bool valid_key              = lane_pair_.first != invalid_key;
     auto valid_lane                   = tile_.thread_rank() != metadata_lane_;
     const bool key_greater_equal      = (key >= lane_pair_.first) && valid_key && valid_lane;
     uint32_t key_greater_equal_bitmap = tile_.ballot(key_greater_equal);
@@ -234,7 +234,7 @@ struct btree_node {
 
   DEVICE_QUALIFIER value_type get_key_value_from_node(const key_type& key) const {
     auto key_location = find_key_lane_in_node(key);
-    return key_location == -1 ? std::numeric_limits<uint32_t>::max()
+    return key_location == -1 ? pair_type::invalid_value
                               : get_value_from_lane(key_location);
   }
   DEVICE_QUALIFIER key_type get_key_from_lane(const int& location) const {
@@ -265,9 +265,9 @@ struct btree_node {
       return false;
     } else {
       // else we shuffle the keys and do the insertion
-      auto up_keys                  = tile_.shfl_up(lane_pair_.first, 1);
-      auto up_values                = tile_.shfl_up(lane_pair_.second, 1);
-      const bool valid_key          = lane_pair_.first != std::numeric_limits<uint32_t>::max();
+      auto up_keys                  = tile_.shfl_up(static_cast<typename pair_type::key_type>(lane_pair_.first), 1);
+      auto up_values                = tile_.shfl_up(static_cast<typename pair_type::key_type>(lane_pair_.second), 1);
+      const bool valid_key          = lane_pair_.first != invalid_key;
       auto valid_lane               = tile_.thread_rank() != metadata_lane_;
       const bool key_is_larger      = (key > lane_pair_.first) && valid_key && valid_lane;
       uint32_t key_is_larger_bitmap = tile_.ballot(key_is_larger);
@@ -293,8 +293,8 @@ struct btree_node {
     bool key_exist = key_lane != -1;
 
     if (key_exist) {
-      auto down_keys   = tile_.shfl_down(lane_pair_.first, 1);
-      auto down_values = tile_.shfl_down(lane_pair_.second, 1);
+      auto down_keys   = tile_.shfl_down(static_cast<typename pair_type::key_type>(lane_pair_.first), 1);
+      auto down_values = tile_.shfl_down(static_cast<typename pair_type::key_type>(lane_pair_.second), 1);
       if (tile_.thread_rank() >= key_lane && tile_.thread_rank() != metadata_lane_) {
         lane_pair_ = {down_keys, down_values};
       }
@@ -400,7 +400,7 @@ struct btree_node {
 
   DEVICE_QUALIFIER bool is_full() const {
     auto key = get_key_from_lane(last_pair_lane_);
-    return key != std::numeric_limits<uint32_t>::max();
+    return key != invalid_key;
   }
 
   DEVICE_QUALIFIER void set_lock_in_registers() {
@@ -450,8 +450,8 @@ struct btree_node {
   DEVICE_QUALIFIER bool try_lock() {
     unsigned_type old;
     if (tile_.thread_rank() == metadata_lane_) {
-      old = atomicOr(reinterpret_cast<unsigned int*>(&node_ptr_[metadata_lane_].second),
-                     static_cast<unsigned int>(lock_bit_mask_));
+      old = atomicOr(reinterpret_cast<unsigned long long *>(&node_ptr_[metadata_lane_]),
+                     static_cast<unsigned long long>(lock_bit_mask_));
     }
     old        = tile_.shfl(old, metadata_lane_);
     is_locked_ = !is_lockbit_set(old);
@@ -468,8 +468,8 @@ struct btree_node {
     __threadfence();
     unsigned_type old;
     if (tile_.thread_rank() == metadata_lane_) {
-      old = atomicAnd(reinterpret_cast<unsigned int*>(&node_ptr_[metadata_lane_].second),
-                      static_cast<unsigned int>(~lock_bit_mask_));
+      old = atomicAnd(reinterpret_cast<unsigned long long*>(&node_ptr_[metadata_lane_]),
+                      ~(static_cast<unsigned long long>(lock_bit_mask_)));
     }
     unset_lock_in_registers();
     is_locked_ = false;
@@ -493,13 +493,13 @@ struct btree_node {
   // metadata_lane_ Maps to a pair of {high-key, [lock-bit][leaf-bit][ptr-30bits]}. This
   // has to be the last pair in the node
   static constexpr uint32_t metadata_lane_   = node_width - 1;
-  static constexpr uint32_t bits_per_byte_   = 8;
-  static constexpr uint32_t lock_bit_offset_ = sizeof(key_type) * bits_per_byte_ - 1;
+  static constexpr uint32_t lock_bit_offset_ = pair_type::value_bits - 1;
   static constexpr uint32_t leaf_bit_offset_ = lock_bit_offset_ - 1;
   static constexpr uint32_t lock_bit_mask_   = 1u << lock_bit_offset_;  // MSB is lock bit
   static constexpr uint32_t leaf_bit_mask_   = 1u << leaf_bit_offset_;  // 2nd MSB is leaf bit
 
   static constexpr uint32_t reserved_lanes_count_ = 1;  // one pair reserved for side-link
+                                                        // and one for metadata
   static constexpr uint32_t valid_lanes_count_    = node_width - reserved_lanes_count_;
   static constexpr uint32_t last_pair_lane_       = node_width - reserved_lanes_count_ - 1;
   int half_node_width_                            = node_width >> 1;

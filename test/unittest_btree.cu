@@ -20,26 +20,17 @@
 #include <cmd.hpp>
 #include <cstdint>
 
-std::size_t num_keys;
+std::size_t num_keys = 1024;
 
 namespace {
 using key_type   = uint32_t;
 using value_type = uint32_t;
 
-const auto sentinel_value = std::numeric_limits<key_type>::max();
+// const auto sentinel_value = std::numeric_limits<key_type>::max();
 // const auto sentinel_key = std::numeric_limits<value_type>::max();
 template <typename BTreeMap>
 struct BTreeMapData {
   using btree_map = BTreeMap;
-};
-
-template <class MapData>
-class BTreeMapTest : public testing::Test {
- protected:
-  BTreeMapTest() { btree_map_ = new typename map_data::btree_map(); }
-  ~BTreeMapTest() override { delete btree_map_; }
-  using map_data = MapData;
-  typename map_data::btree_map* btree_map_;
 };
 
 template <typename T>
@@ -65,6 +56,7 @@ struct mapped_vector {
   T* dh_buffer_;
 };
 
+template <typename key_type = uint32_t, typename value_type = uint32_t>
 struct testing_input {
   testing_input(std::size_t input_num_keys)
       : num_keys(input_num_keys)
@@ -99,12 +91,26 @@ struct testing_input {
   mapped_vector<key_type> keys_not_exist;
 };
 
+template <class MapData>
+class BTreeMapTest : public testing::Test {
+ protected:
+  BTreeMapTest() { btree_map_ = new typename map_data::btree_map(); }
+  ~BTreeMapTest() override { delete btree_map_; }
+  using map_data         = MapData;
+  using input_key_type   = typename map_data::btree_map::key_type;
+  using input_value_type = typename map_data::btree_map::value_type;
+  typename map_data::btree_map* btree_map_;
+  testing_input<input_key_type, input_value_type> input{num_keys};
+  mapped_vector<input_value_type> find_results{num_keys};
+  constexpr static input_value_type sentinel_value = map_data::btree_map::pair_type::invalid_value;
+};
+
 struct TreeParam {
   static constexpr int BranchingFactor = 16;
 };
 struct SlabAllocParam {
-  static constexpr uint32_t NumSuperBlocks  = 4;
-  static constexpr uint32_t NumMemoryBlocks = 1024 * 8;
+  static constexpr uint32_t NumSuperBlocks  = 1;
+  static constexpr uint32_t NumMemoryBlocks = 1024 * 1;
   static constexpr uint32_t TileSize        = TreeParam::BranchingFactor;
   static constexpr uint32_t SlabSize        = 128;
 };
@@ -130,124 +136,124 @@ typedef testing::Types<
     BTreeMapData<GpuBTree::gpu_versioned_btree<key_type,
                                                value_type,
                                                TreeParam::BranchingFactor,
-                                               slab_allocator_type>>>
+                                               slab_allocator_type>>,
+    BTreeMapData<GpuBTree::gpu_blink_tree<key_type,
+                                          value_type,
+                                          TreeParam::BranchingFactor,
+                                          slab_allocator_type,
+                                          var_pair_type<key_type, value_type>>>,
+    BTreeMapData<GpuBTree::gpu_blink_tree<uint64_t,
+                                          uint64_t,
+                                          TreeParam::BranchingFactor,
+                                          slab_allocator_type,
+                                          var_pair_type<uint64_t, uint64_t, 32, 32>>>,
+    BTreeMapData<GpuBTree::gpu_blink_tree<uint64_t,
+        uint64_t,
+        TreeParam::BranchingFactor,
+        slab_allocator_type,
+        var_pair_type<uint64_t, uint64_t, 33, 31>>>,
+    BTreeMapData<GpuBTree::gpu_blink_tree<uint64_t,
+                                          uint64_t,
+                                          TreeParam::BranchingFactor,
+                                          slab_allocator_type,
+                                          var_pair_type<uint64_t, uint64_t, 42, 22>>>
+                                          >
     Implementations;
 
 TYPED_TEST_SUITE(BTreeMapTest, Implementations);
 
 TYPED_TEST(BTreeMapTest, Validation) {
-  testing_input input(num_keys);
+  //  testing_input<input_key_type, input_value_type> input(num_keys);
   EXPECT_EQ(cudaDeviceSynchronize(), cudaSuccess);
-  this->btree_map_->insert(input.keys.data(), input.values.data(), num_keys);
+  this->btree_map_->insert(this->input.keys.data(), this->input.values.data(), num_keys);
   EXPECT_EQ(cudaDeviceSynchronize(), cudaSuccess);
-  auto keys = input.keys.to_std_vector();
+  auto keys = this->input.keys.to_std_vector();
   EXPECT_NO_THROW(this->btree_map_->validate_tree_structure(
       keys, [](auto key) { return static_cast<value_type>(key); }));
-  input.free();
 }
 
 TYPED_TEST(BTreeMapTest, FindExist) {
-  mapped_vector<value_type> find_results(num_keys);
-  testing_input input(num_keys);
   EXPECT_EQ(cudaDeviceSynchronize(), cudaSuccess);
-  this->btree_map_->insert(input.keys.data(), input.values.data(), num_keys);
+  this->btree_map_->insert(this->input.keys.data(), this->input.values.data(), num_keys);
   cuda_try(cudaDeviceSynchronize());
-  this->btree_map_->find(input.keys_exist.data(), find_results.data(), num_keys);
+  this->btree_map_->find(this->input.keys_exist.data(), this->find_results.data(), num_keys);
   cuda_try(cudaDeviceSynchronize());
   EXPECT_EQ(cudaDeviceSynchronize(), cudaSuccess);
   for (std::size_t i = 0; i < num_keys; i++) {
-    auto expected_value = input.values[i];
-    auto found_value    = find_results[i];
+    auto expected_value = this->input.values[i];
+    auto found_value    = this->find_results[i];
     ASSERT_EQ(found_value, expected_value);
   }
-  find_results.free();
-  input.free();
 }
 
 TYPED_TEST(BTreeMapTest, FindNotExist) {
-  mapped_vector<value_type> find_results(num_keys);
-  testing_input input(num_keys);
   EXPECT_EQ(cudaDeviceSynchronize(), cudaSuccess);
-  this->btree_map_->insert(input.keys.data(), input.values.data(), num_keys);
+  this->btree_map_->insert(this->input.keys.data(), this->input.values.data(), num_keys);
   cuda_try(cudaDeviceSynchronize());
-  this->btree_map_->find(input.keys_not_exist.data(), find_results.data(), num_keys);
+  this->btree_map_->find(this->input.keys_not_exist.data(), this->find_results.data(), num_keys);
   cuda_try(cudaDeviceSynchronize());
   EXPECT_EQ(cudaDeviceSynchronize(), cudaSuccess);
   for (std::size_t i = 0; i < num_keys; i++) {
-    auto expected_value = sentinel_value;
-    auto found_value    = find_results[i];
+    auto expected_value = this->sentinel_value;
+    auto found_value    = this->find_results[i];
     ASSERT_EQ(found_value, expected_value);
   }
-  find_results.free();
-  input.free();
 }
 
 TYPED_TEST(BTreeMapTest, EraseAllTest) {
-  mapped_vector<value_type> find_results(num_keys);
-  testing_input input(num_keys);
-  this->btree_map_->insert(input.keys.data(), input.values.data(), num_keys);
+  this->btree_map_->insert(this->input.keys.data(), this->input.values.data(), num_keys);
   cuda_try(cudaDeviceSynchronize());
-  this->btree_map_->erase(input.keys.data(), num_keys);
+  this->btree_map_->erase(this->input.keys.data(), num_keys);
   cuda_try(cudaDeviceSynchronize());
-  this->btree_map_->find(input.keys_exist.data(), find_results.data(), num_keys);
+  this->btree_map_->find(this->input.keys_exist.data(), this->find_results.data(), num_keys);
   cuda_try(cudaDeviceSynchronize());
   EXPECT_EQ(cudaDeviceSynchronize(), cudaSuccess);
   for (std::size_t i = 0; i < num_keys; i++) {
-    auto expected_value = sentinel_value;
-    auto found_value    = find_results[i];
+    auto expected_value = this->sentinel_value;
+    auto found_value    = this->find_results[i];
     ASSERT_EQ(found_value, expected_value);
   }
-  find_results.free();
-  input.free();
 }
 
 TYPED_TEST(BTreeMapTest, EraseNoneTest) {
-  mapped_vector<value_type> find_results(num_keys);
-  testing_input input(num_keys);
-  this->btree_map_->insert(input.keys.data(), input.values.data(), num_keys);
+  this->btree_map_->insert(this->input.keys.data(), this->input.values.data(), num_keys);
   cuda_try(cudaDeviceSynchronize());
-  this->btree_map_->erase(input.keys_not_exist.data(), num_keys);
+  this->btree_map_->erase(this->input.keys_not_exist.data(), num_keys);
   cuda_try(cudaDeviceSynchronize());
-  this->btree_map_->find(input.keys_exist.data(), find_results.data(), num_keys);
+  this->btree_map_->find(this->input.keys_exist.data(), this->find_results.data(), num_keys);
   cuda_try(cudaDeviceSynchronize());
   // EXPECT_EQ(cudaDeviceSynchronize(), cudaSuccess);
   for (std::size_t i = 0; i < num_keys; i++) {
-    auto expected_value = input.values[i];
-    auto found_value    = find_results[i];
+    auto expected_value = this->input.values[i];
+    auto found_value    = this->find_results[i];
     ASSERT_EQ(found_value, expected_value);
   }
-  find_results.free();
-  input.free();
 }
 
 TYPED_TEST(BTreeMapTest, EraseAllInsertAllTest) {
-  mapped_vector<value_type> find_results(num_keys);
-  testing_input input(num_keys);
-  this->btree_map_->insert(input.keys.data(), input.values.data(), num_keys);
+  this->btree_map_->insert(this->input.keys.data(), this->input.values.data(), num_keys);
   cuda_try(cudaDeviceSynchronize());
-  this->btree_map_->erase(input.keys.data(), num_keys);
+  this->btree_map_->erase(this->input.keys.data(), num_keys);
   cuda_try(cudaDeviceSynchronize());
-  this->btree_map_->find(input.keys_exist.data(), find_results.data(), num_keys);
+  this->btree_map_->find(this->input.keys_exist.data(), this->find_results.data(), num_keys);
   cuda_try(cudaDeviceSynchronize());
   EXPECT_EQ(cudaDeviceSynchronize(), cudaSuccess);
   for (std::size_t i = 0; i < num_keys; i++) {
-    auto expected_value = sentinel_value;
-    auto found_value    = find_results[i];
+    auto expected_value = this->sentinel_value;
+    auto found_value    = this->find_results[i];
     ASSERT_EQ(found_value, expected_value);
   }
   EXPECT_EQ(cudaDeviceSynchronize(), cudaSuccess);
-  this->btree_map_->insert(input.keys.data(), input.values.data(), num_keys);
+  this->btree_map_->insert(this->input.keys.data(), this->input.values.data(), num_keys);
   cuda_try(cudaDeviceSynchronize());
-  this->btree_map_->find(input.keys_exist.data(), find_results.data(), num_keys);
+  this->btree_map_->find(this->input.keys_exist.data(), this->find_results.data(), num_keys);
   EXPECT_EQ(cudaDeviceSynchronize(), cudaSuccess);
   cuda_try(cudaDeviceSynchronize());
   for (std::size_t i = 0; i < num_keys; i++) {
-    auto expected_value = input.values[i];
-    auto found_value    = find_results[i];
+    auto expected_value = this->input.values[i];
+    auto found_value    = this->find_results[i];
     ASSERT_EQ(found_value, expected_value);
   }
-  find_results.free();
-  input.free();
 }
 
 }  // namespace

@@ -15,16 +15,25 @@
  */
 
 #pragma once
-#include <limits>
 #include <cstdint>
+#include <limits>
 
 template <typename Key, typename Value>
 struct __align__(8) pair_type {
   using key_type   = Key;
   using value_type = Value;
   using size_type  = uint32_t;
+
+  static constexpr size_t key_bits          = sizeof(key_type) * 8;
+  static constexpr size_t value_bits        = sizeof(value_type) * 8;
+  static constexpr key_type invalid_key     = std::numeric_limits<key_type>::max();
+  static constexpr value_type invalid_value = std::numeric_limits<value_type>::max();
+
   HOST_DEVICE_QUALIFIER pair_type(const key_type& key, const value_type& value)
-      : first(key), second(value) {}
+      : first(key), second(value) {
+    static_assert(offsetof(typeof(*this), second) == 0,
+                  "second must be the last member of pair_type");
+  }
   HOST_DEVICE_QUALIFIER pair_type(void)
       : first(std::numeric_limits<key_type>::max())
       , second(std::numeric_limits<value_type>::max()){};
@@ -57,8 +66,8 @@ struct __align__(8) pair_type {
     return (first != other.first) || (second != other.second);
   }
 
-  key_type first;
   value_type second;
+  key_type first;
 
  private:
 };

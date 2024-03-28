@@ -31,6 +31,7 @@
 #include <queue>
 #include <sstream>
 #include <type_traits>
+#include <var_pair_type.hpp>
 
 #include <device_bump_allocator.hpp>
 #include <slab_alloc.hpp>
@@ -63,12 +64,13 @@ namespace GpuBTree {
 template <typename Key,
           typename Value,
           int B              = 16,
-          typename Allocator = device_bump_allocator<node_type<Key, Value, B>>>
+          typename Allocator = device_bump_allocator<node_type<Key, Value, B>>,
+          typename PairType  = pair_type<Key, Value>>
 struct gpu_blink_tree {
   using size_type                        = uint32_t;
   using key_type                         = Key;
   using value_type                       = Value;
-  using pair_type                        = pair_type<Key, Value>;
+  using pair_type                        = PairType;
   static auto constexpr branching_factor = B;
 
   static constexpr key_type invalid_key     = std::numeric_limits<key_type>::max();
@@ -98,9 +100,9 @@ struct gpu_blink_tree {
 
     size_type num_keys_and_zero = num_keys + 1;  // tree must include the minimum possible key
 
-    uint32_t num_leaves = (num_keys_and_zero % bulk_build_branching_factor)
-                              ? num_keys_and_zero / bulk_build_branching_factor + 1
-                              : num_keys_and_zero / bulk_build_branching_factor;
+    uint32_t num_leaves         = (num_keys_and_zero % bulk_build_branching_factor)
+                                      ? num_keys_and_zero / bulk_build_branching_factor + 1
+                                      : num_keys_and_zero / bulk_build_branching_factor;
     uint32_t num_nodes          = num_leaves;
     uint32_t num_interior_nodes = num_leaves;
 
