@@ -1142,6 +1142,10 @@ struct gpu_blink_tree {
     return tree_size_gbs;
   }
 
+  allocator_type &get_allocator() {
+    return allocator_;
+  }
+
  private:
   template <typename key_type,
             typename value_type,
