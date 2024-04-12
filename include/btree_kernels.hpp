@@ -625,6 +625,52 @@ __global__ void range_query_kernel(const key_type* lower_bounds,
   if (counts != nullptr && thread_id < keys_count) { counts[thread_id] = count; }
 }
 
+template <typename key_type, typename pair_type, typename size_type, typename btree>
+__global__ void find_next_kernel(const key_type* lower_bounds,
+                                 const key_type* upper_bounds,
+                                 pair_type* result,
+                                 const size_type keys_count,
+                                 btree tree,
+                                 bool concurrent = false) {
+  auto thread_id = threadIdx.x + blockIdx.x * blockDim.x;
+
+  auto block                = cg::this_thread_block();
+  auto tile                 = cg::tiled_partition<btree::branching_factor>(block);
+  auto tile_id              = thread_id / btree::branching_factor;
+  auto first_tile_thread_id = tile_id * btree::branching_factor;
+  if ((thread_id - tile.thread_rank()) >= keys_count) { return; }
+
+  auto lower_bound = btree::invalid_key;
+  auto upper_bound = btree::invalid_key;
+
+  bool to_find = false;
+  pair_type my_pair;
+  if (thread_id < keys_count) {
+    lower_bound = lower_bounds[thread_id];
+    upper_bound = upper_bounds[thread_id];
+    to_find     = true;
+  }
+
+  using allocator_type = device_allocator_context<typename btree::allocator_type>;
+  allocator_type allocator{tree.allocator_, tile};
+
+  auto work_queue = tile.ballot(to_find);
+  while (work_queue) {
+    auto cur_rank        = __ffs(work_queue) - 1;
+    auto cur_lower_bound = tile.shfl(lower_bound, cur_rank);
+    auto cur_upper_bound = tile.shfl(upper_bound, cur_rank);
+    auto cur_result =
+        tree.cooperative_find_next(cur_lower_bound, cur_upper_bound, tile, allocator, concurrent);
+    if (cur_rank == tile.thread_rank()) {
+      my_pair = cur_result;
+      to_find = false;
+    }
+    work_queue = tile.ballot(to_find);
+  }
+
+  if (thread_id < keys_count) { result[thread_id] = my_pair; }
+}
+
 template <typename key_type, typename size_type, typename btree>
 __global__ void erase_kernel(const key_type* keys,
                              const size_type keys_count,

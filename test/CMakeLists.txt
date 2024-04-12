@@ -59,6 +59,9 @@ CPMAddPackage(
 add_executable(unittest_btree unittest_btree.cu)
 target_link_libraries(unittest_btree	PRIVATE gpu_btrees  PRIVATE gtest)
 
+add_executable(unittest_btree_epic unittest_btree_epic.cu)
+target_link_libraries(unittest_btree_epic	PRIVATE gpu_btrees  PRIVATE gtest)
+
 add_executable(unittest_versioning unittest_versioning.cu)
 target_link_libraries(unittest_versioning PRIVATE gpu_btrees  PRIVATE gtest)
 

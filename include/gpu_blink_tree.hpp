@@ -237,6 +237,18 @@ struct gpu_blink_tree {
         keys, values, num_keys, *this, concurrent);
   }
 
+  void find_next(const Key* lower_bounds,
+                 const Key* upper_bounds,
+                 pair_type* result,
+                 const size_type num_keys,
+                 cudaStream_t stream = 0,
+                 bool concurrent     = false) const {
+    const uint32_t block_size = 512;
+    const uint32_t num_blocks = (num_keys + block_size - 1) / block_size;
+    kernels::find_next_kernel<<<num_blocks, block_size, 0, stream>>>(
+        lower_bounds, upper_bounds, result, num_keys, *this, concurrent);
+  }
+
   void erase(const Key* keys,
              const size_type num_keys,
              cudaStream_t stream = 0,
@@ -354,6 +366,55 @@ struct gpu_blink_tree {
       }
     }
     return count;
+  }
+
+  // Range query that includes [lower_bound, upper_bound)
+  template <typename tile_type, typename DeviceAllocator>
+  DEVICE_QUALIFIER pair_type cooperative_find_next(const Key& lower_bound,
+                                                   const Key& upper_bound,
+                                                   const tile_type& tile,
+                                                   DeviceAllocator& allocator,
+                                                   bool concurrent   = false) /*const*/
+  {
+    using node_type         = btree_node<pair_type, tile_type, branching_factor>;
+    auto current_node_index = *d_root_index_;
+    while (true) {
+      node_type current_node = node_type(
+          reinterpret_cast<pair_type*>(allocator.address(allocator_, current_node_index)), tile);
+      if (concurrent) {
+        current_node.load(cuda_memory_order::memory_order_relaxed);
+        traverse_side_links(current_node, current_node_index, lower_bound, tile, allocator);
+      } else {
+        current_node.load();
+      }
+      bool is_leaf = current_node.is_leaf();
+      if (is_leaf) {
+        bool keep_traversing = true;
+        bool pair_found = true;
+        pair_type retval;
+        do {
+          retval = current_node.get_next_key_in_range(lower_bound, upper_bound, pair_found);
+          keep_traversing = upper_bound > current_node.get_high_key();
+          if (pair_found || !keep_traversing) {
+            return retval;
+          }
+          if (keep_traversing) {
+            current_node_index = current_node.get_sibling_index();
+            current_node       = node_type(
+                reinterpret_cast<pair_type*>(allocator.address(allocator_, current_node_index)),
+                tile);
+            if (concurrent) {
+              current_node.load(cuda_memory_order::memory_order_relaxed);
+            } else {
+              current_node.load();
+            }
+          }
+        } while (keep_traversing);
+      } else {
+        current_node_index = current_node.find_next(lower_bound);
+      }
+    }
+    return pair_type();
   }
 
   template <typename tile_type, typename DeviceAllocator>
@@ -751,7 +812,7 @@ struct gpu_blink_tree {
     h_btree_ = new pair_type[num_allocated_nodes * branching_factor];
 
     std::size_t tree_size = num_allocated_nodes * branching_factor;
-    tree_size *= (sizeof(Key) + sizeof(Value));
+    tree_size *= sizeof(pair_type);
 
     copy_tree_to_host(tree_size);
 
@@ -774,8 +835,7 @@ struct gpu_blink_tree {
     std::queue<size_type> queue;
 
     // Copied from node struct because we can't construct it on CPU
-    uint32_t bits_per_byte   = 8;
-    uint32_t lock_bit_offset = sizeof(key_type) * bits_per_byte - 1;
+    uint32_t lock_bit_offset = pair_type::value_bits - 1;
     uint32_t leaf_bit_offset = lock_bit_offset - 1;
     uint32_t lock_bit_mask   = 1u << lock_bit_offset;
     uint32_t leaf_bit_mask   = 1u << leaf_bit_offset;
@@ -1078,6 +1138,7 @@ struct gpu_blink_tree {
   double compute_memory_usage() {
     auto num_nodes       = get_num_tree_node();
     double tree_size_gbs = double(num_nodes) * sizeof(node_type<Key, Value, B>) / (1ull << 30);
+    static_assert(sizeof(node_type<Key, Value, B>) == 128);
     return tree_size_gbs;
   }
 
@@ -1146,6 +1207,14 @@ struct gpu_blink_tree {
                                                      btree,
                                                      size_type*,
                                                      const bool);
+
+  template <typename key_type, typename pair_type, typename size_type, typename btree>
+  friend __global__ void kernels::find_next_kernel(const key_type*,
+                                                   const key_type*,
+                                                   pair_type*,
+                                                   const size_type,
+                                                   btree,
+                                                   bool);
 
   template <typename key_type, typename size_type, typename btree>
   friend __global__ void kernels::erase_kernel(const key_type*, const size_type, btree, const bool);

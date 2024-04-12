@@ -322,6 +322,26 @@ struct btree_node {
     }
     return __popc(in_range_ballot);
   }
+
+  DEVICE_QUALIFIER pair_type get_next_key_in_range(const key_type& lower_bound,
+                                                   const key_type& upper_bound,
+                                                   bool &pair_found) const {
+    bool is_valid_lane   = tile_.thread_rank() != metadata_lane_;
+    key_type key = lane_pair_.first;
+    // bool in_range        = lane_pair_.first >= lower_bound && lane_pair_.first < upper_bound;
+    bool in_range        = key >= lower_bound && key < upper_bound;
+    uint32_t in_range_ballot = tile_.ballot(in_range && is_valid_lane);
+    int32_t first_lane      = __ffs(in_range_ballot) - 1;
+
+    pair_found = in_range_ballot != 0;
+    if (in_range_ballot) {
+      key_type retkey = get_key_from_lane(first_lane);
+      value_type retval = get_value_from_lane(first_lane);
+      return pair_type {retkey, retval};
+    }
+    return pair_type();
+  }
+
   template <typename T>
   DEVICE_QUALIFIER T mask_meta_bit(const T& data) const {
     auto mask = (~lock_bit_mask_) & (~leaf_bit_mask_);
