@@ -204,7 +204,13 @@ struct SlabAllocParam {
   static constexpr uint32_t TileSize        = TreeParam::BranchingFactor;
   static constexpr uint32_t SlabSize        = 128;
 };
-using node_type           = GpuBTree::node_type<key_type, value_type, TreeParam::BranchingFactor>;
+
+using node_type = GpuBTree::node_type<key_type,
+                                      value_type,
+                                      TreeParam::BranchingFactor,
+                                      var_pair_type<uint64_t, uint64_t, 42, 22>>;
+static_assert(sizeof(node_type) == 128);
+
 using bump_allocator_type = device_bump_allocator<node_type, 100000>;
 using slab_allocator_type = device_allocator::SlabAllocLight<node_type,
                                                              SlabAllocParam::NumSuperBlocks,

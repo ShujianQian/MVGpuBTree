@@ -22,9 +22,9 @@ struct device_allocator_context {};
 #include <pair_type.hpp>
 
 namespace GpuBTree {
-template <typename Key, typename Value, int b = 16>
+template <typename Key, typename Value, int b = 16, typename PairType = pair_type<Key, Value>>
 struct node_type {
-  using T = pair_type<Key, Value>;
+  using T = PairType;
   T node[b];
 };
 }  // namespace GpuBTree

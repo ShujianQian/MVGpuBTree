@@ -797,7 +797,7 @@ struct gpu_blink_tree {
 
   // Stats
   void copy_tree_to_host(size_type bytes_count) {
-    allocator_.copy_buffer(reinterpret_cast<node_type<Key, Value, B>*>(h_btree_), bytes_count);
+    allocator_.copy_buffer(reinterpret_cast<node_type<Key, Value, B, pair_type>*>(h_btree_), bytes_count);
   }
 
   size_type get_num_tree_node() { return allocator_.get_allocated_count(); }
@@ -1048,7 +1048,7 @@ struct gpu_blink_tree {
   void plot_dot(std::string fname, const bool plot_links = true) {
     auto num_nodes = get_num_tree_node();
     h_btree_       = new pair_type[num_nodes * branching_factor];
-    copy_tree_to_host(num_nodes * branching_factor * (sizeof(Key) + sizeof(Value)));
+    copy_tree_to_host(num_nodes * branching_factor * sizeof(pair_type));
 
     std::stringstream dot;
     dot << "digraph g {" << std::endl;
@@ -1079,7 +1079,7 @@ struct gpu_blink_tree {
     auto num_nodes = get_num_tree_node();
     h_btree_       = new pair_type[num_nodes * branching_factor];
 
-    copy_tree_to_host(num_nodes * branching_factor * (sizeof(Key) + sizeof(Value)));
+    copy_tree_to_host(num_nodes * branching_factor * sizeof(pair_type));
     for (size_type node = 0; node < num_nodes; node++) {
       std::cout << "Node: " << node << std::endl;
       for (size_type lane = 0; lane < branching_factor; lane++) { std::cout << lane << ","; }
@@ -1137,7 +1137,7 @@ struct gpu_blink_tree {
   }
   double compute_memory_usage() {
     auto num_nodes       = get_num_tree_node();
-    double tree_size_gbs = double(num_nodes) * sizeof(node_type<Key, Value, B>) / (1ull << 30);
+    double tree_size_gbs = double(num_nodes) * sizeof(node_type<Key, Value, B, pair_type>) / (1ull << 30);
     static_assert(sizeof(node_type<Key, Value, B>) == 128);
     return tree_size_gbs;
   }
